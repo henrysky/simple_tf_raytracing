@@ -334,7 +334,81 @@ class Pyramid:
                 _pt[interacted_w_shortest_idx] = pt
         return _pt
 
-    
+
+class Cone:
+    def __init__(self, center, height, radius, reflectivity=1.):
+        """
+        A Cone where the base centered at `center` with height `height`
+
+        :param center: 3D vectors for the center of the base
+        :type center: tf.Tensor
+        :param height: height of the base
+        :type height: float
+        :param radius: radius of the base
+        :type radius: float
+        :param reflectivity: Reflectivity of the surface
+        :type reflectivity: float
+        """
+        self.center = tf.cast(center, precision)
+        self.height = tf.cast(height, precision)
+        self.radius = tf.cast(radius, precision)
+        self.reflectivity = reflectivity
+
+        self.c = self.center + tf.constant([0., 0., height], dtype=precision)  # vector for the tips
+        self.v = self.center - self.c  # vector for the axis
+        self.halfangle = tf.atan(self.radius/self.height)
+        self.halfangle2 = tf.cos(self.halfangle)**2
+
+    def intersect(self, rays):
+        num_rays = rays.size()
+
+        tiled_v = tile_vector(self.v, num_rays)
+        tiled_c = tile_vector(self.c, num_rays)
+
+        co = rays.p0 - tiled_c
+        p1v_dot = tf.reduce_sum(rays.p1 * tiled_v, 1)
+
+        a = p1v_dot * tf.reduce_sum(rays.p1 * tiled_v, 1) - self.halfangle2
+        b = 2. * (p1v_dot * tf.reduce_sum(tiled_v * co, 1) - tf.reduce_sum(co * rays.p1, 1) * self.halfangle2)
+        c = tf.reduce_sum(co * tiled_v, 1) ** 2 - tf.reduce_sum(co * co, 1) * self.halfangle2
+
+        det = b * b - 4. * a * c
+        det = tf.where(tf.greater(det, 0.), tf.sqrt(det), tf.ones_like(det) * -1.)
+
+        t1 = (-b - det) / (2. * a)
+        t2 = (-b + det) / (2. * a)
+
+        t = tf.where(tf.logical_and(tf.logical_or(tf.less(t1, 0.),  tf.greater(t2, 0.)),
+                                    tf.less(t2, t1)), t2, t1)
+
+        p_intersect = rays.p0 + tf.multiply(rays.p1, tf.expand_dims(t,1))
+        cp = p_intersect - tiled_c
+
+        h = tf.reduce_sum(cp * tiled_v, 1)
+
+        normal = norm(tf.multiply(cp, tf.expand_dims(tf.reduce_sum(tiled_v * cp, 1) / tf.reduce_sum(cp * cp, 1), 1)) -
+                      tiled_v)
+
+        ray_direction = rays.p1-tf.multiply(normal, tf.expand_dims(tf.reduce_sum(normal * rays.p1, 1), 1))*2.
+        # if directional vector small enough, then assume 0.
+        ray_direction = tf.where(tf.greater(tf.abs(ray_direction), epsilon), ray_direction, tf.zeros_like(ray_direction))
+
+        cond_1 = tf.less(det, 0.)
+        cond_2 = tf.less(t, 0.)
+        cond_3 = tf.logical_or(tf.less(h, 0.), tf.greater(h, self.height))
+
+        no_interaction_idx = tf.logical_or(tf.logical_or(cond_1, cond_2), cond_3)
+        no_interaction_idx_3 = tf.concat([tf.expand_dims(no_interaction_idx, 1), tf.expand_dims(no_interaction_idx, 1),
+                                          tf.expand_dims(no_interaction_idx, 1)], 1)
+
+        p_intersect = tf.where(no_interaction_idx_3, rays.p0, p_intersect)
+        ray_direction = tf.where(no_interaction_idx_3, rays.p1, ray_direction)
+        new_interact_num = tf.where(no_interaction_idx, rays.interact_num, rays.interact_num + 1)
+        new_intensity = tf.where(no_interaction_idx, rays.intensity, rays.intensity * self.reflectivity)
+
+        return Ray(p_intersect, ray_direction, intensity=new_intensity, interact_num=new_interact_num)
+
+
 class PyramidArray:
     def __init__(self, center, width, height, resolution, spacing=0., reflectivity=0.1):
         """
