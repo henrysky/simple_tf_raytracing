@@ -25,7 +25,7 @@ def set_precision(p):
 
 def mag(tensor):
     """
-    Calculate magnitude of the vector
+    Calculate magnitude of the vector, return scalar tensor
     """
     if tf.equal(tensor.get_shape().rank, 1):
         mag = tf.sqrt(tf.tensordot(tensor, tensor, 1))
@@ -34,9 +34,25 @@ def mag(tensor):
     return mag
 
 
+def ray_reflection(rays, normal):
+    """
+    Calculate reflection of rays `rays` with normal `normal`
+    `
+    :param rays: Rays directional vector, shape Nx3
+    :type rays: Ray
+    :param normal: normal vector
+    :type normal: tf.Tensor
+    """
+    ray_direction = rays.p1 - tf.multiply(normal, tf.expand_dims(tf.reduce_sum(normal * rays.p1, 1), 1)) * 2.
+    # if directional vector small enough, then assume 0.
+    ray_direction = tf.where(tf.greater(tf.abs(ray_direction), epsilon), ray_direction, tf.zeros_like(ray_direction))
+
+    return ray_direction
+
+
 def norm(tensor):
     """
-    Calculate norm of the vector
+    Calculate norm of the vector, return normalized vector
     """
     _mag = mag(tensor)
     if tf.equal(tensor.get_shape().rank, 1):
@@ -178,9 +194,7 @@ class Triangle(Surface):
         si = (uv_dot * wv_dot - vv_dot * wu_dot) / denom
         ti = (uv_dot * wu_dot - uu_dot * wv_dot) / denom
         
-        ray_direction = rays.p1-(tiled_normal*tf.expand_dims(b, 1))*2.
-        # if directional vector small enough, then assume 0.
-        ray_direction = tf.where(tf.greater(tf.abs(ray_direction), epsilon), ray_direction, tf.zeros_like(ray_direction))
+        ray_direction = ray_reflection(rays, tiled_normal)
         
         cond_1 = tf.less(tf.squeeze(rI), epsilon)
         cond_2 = tf.less(si, 0.)
@@ -262,9 +276,7 @@ class Plane(Surface):
         si = (uv_dot * wv_dot - vv_dot * wu_dot) / denom
         ti = (uv_dot * wu_dot - uu_dot * wv_dot) / denom
         
-        ray_direction = rays.p1-(tiled_normal*tf.expand_dims(b, 1))*2.
-        # if directional vector small enough, then assume 0.
-        ray_direction = tf.where(tf.greater(tf.abs(ray_direction), epsilon), ray_direction, tf.zeros_like(ray_direction))
+        ray_direction = ray_reflection(rays, tiled_normal)
         
         cond_1 = tf.less(tf.squeeze(rI), epsilon)
         cond_2 = tf.less(si, 0.)
@@ -336,22 +348,22 @@ class Pyramid:
 
 
 class Cone:
-    def __init__(self, center, height, radius, reflectivity=1.):
+    def __init__(self, center, radius, height, reflectivity=1.):
         """
         A Cone where the base centered at `center` with height `height`
 
         :param center: 3D vectors for the center of the base
         :type center: tf.Tensor
-        :param height: height of the base
-        :type height: float
         :param radius: radius of the base
         :type radius: float
+        :param height: height of the base
+        :type height: float
         :param reflectivity: Reflectivity of the surface
         :type reflectivity: float
         """
         self.center = tf.cast(center, precision)
-        self.height = tf.cast(height, precision)
         self.radius = tf.cast(radius, precision)
+        self.height = tf.cast(height, precision)
         self.reflectivity = reflectivity
 
         self.c = self.center + tf.constant([0., 0., height], dtype=precision)  # vector for the tips
@@ -360,6 +372,7 @@ class Cone:
         self.halfangle2 = tf.cos(self.halfangle)**2
 
     def intersect(self, rays):
+        # see http://lousodrome.net/blog/light/2017/01/03/intersection-of-a-ray-and-a-cone/
         num_rays = rays.size()
 
         tiled_v = tile_vector(self.v, num_rays)
@@ -389,9 +402,7 @@ class Cone:
         normal = norm(tf.multiply(cp, tf.expand_dims(tf.reduce_sum(tiled_v * cp, 1) / tf.reduce_sum(cp * cp, 1), 1)) -
                       tiled_v)
 
-        ray_direction = rays.p1-tf.multiply(normal, tf.expand_dims(tf.reduce_sum(normal * rays.p1, 1), 1))*2.
-        # if directional vector small enough, then assume 0.
-        ray_direction = tf.where(tf.greater(tf.abs(ray_direction), epsilon), ray_direction, tf.zeros_like(ray_direction))
+        ray_direction = ray_reflection(rays, normal)
 
         cond_1 = tf.less(det, 0.)
         cond_2 = tf.less(t, 0.)

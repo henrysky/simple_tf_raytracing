@@ -63,6 +63,17 @@ class MyTestCase(unittest.TestCase):
     def test_cone(self):
         cone = Cone(tf.constant([0., 0., 0.]), 1., 1., reflectivity=1)
 
+        # test with single ray
+        rays = Ray(p0=tf.constant([[0., -2., 0.5]], dtype=precision),
+                   p1=tf.constant([[0., 1., 0.]], dtype=precision),
+                   intensity=tf.ones(1),
+                   interact_num=tf.zeros(1, dtype=tf.int32))
+
+        pt = cone.intersect(rays)
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0., -0.5, 0.5]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.]]))
+
+        # test with multiple rays
         rays = Ray(p0=tf.constant([[0., -2., 0.5], [0., -2., -0.5]], dtype=precision),
                    p1=tf.constant([[0., 1., 0.], [0., 1., 0.]], dtype=precision),
                    intensity=tf.ones(2),
@@ -70,6 +81,16 @@ class MyTestCase(unittest.TestCase):
 
         pt = cone.intersect(rays)
         npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0., -0.5, 0.5], [0., -2., -0.5]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 1., 0.]]))
+
+        # test with multiple rays from behind
+        rays = Ray(p0=tf.constant([[0., 2., 0.5], [0., 2., 1.5]], dtype=precision),
+                   p1=tf.constant([[0., -1., 0.], [0., 1., 0.]], dtype=precision),
+                   intensity=tf.ones(2),
+                   interact_num=tf.zeros(2, dtype=tf.int32))
+
+        pt = cone.intersect(rays)
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0., 0.5, 0.5], [0., 2., 1.5]]))
         npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 1., 0.]]))
 
 
