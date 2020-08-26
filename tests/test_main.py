@@ -96,27 +96,28 @@ class MyTestCase(unittest.TestCase):
         npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 1., 0.]]))
 
     def test_conesarray(self):
-        coness = ConeArray(tf.constant([0., 0., 0.]), 1, 1., (4, 4), reflectivity=0.1)
+        coness = ConeArray(tf.constant([0., 0., 0.]), 1, 1., (2, 2), reflectivity=1.)
 
-        rays = Ray(p0=tf.constant([[0.1, 1., .2], [0.2, 0.4, -2.]], dtype=precision),
-                   p1=tf.constant([[0., 0., -1.], [0., 0., 1.]], dtype=precision),
-                   intensity=tf.ones(2),
-                   interact_num=tf.zeros(2, dtype=tf.int32))
+        rays = Ray(p0=tf.constant([[0.1, 1., 2.], [0.2, 0.4, -2.], [0.1, 1., .2]], dtype=precision),
+                   p1=tf.constant([[0., 0., -1.], [0., 0., 1.], [0., 0., -1.]], dtype=precision),
+                   intensity=tf.ones(3),
+                   interact_num=tf.zeros(3, dtype=tf.int32))
 
         pt = coness.intersect(rays)
-        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0.1, 1., 0.1], [0.2, 0.4, 0.]]))
-        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[-1., 0., 0.], [0., 0., -1.]]))
-        pt = coness.intersect(pt)
-        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[-0.1, 1., 0.1], [0.2, 0.4, 0.]]))
-        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 0., -1.]]))
-        pt = coness.intersect(pt)
-        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[-0.1, 1., 0.1], [0.2, 0.4, 0.]]))
-        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 0., -1.]]))
-        pt = coness.intersect(pt)
-        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[-0.1, 1., 0.1], [0.2, 0.4, 0.]]))
-        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 0., -1.]]))
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0.1, 1., 0.1], [0.2, 0.4, 0.], [0.1, 1., 0.1]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[-1., 0., 0.], [0., 0., -1.], [-1., 0., 0.]]))
 
-        npt.assert_array_almost_equal(pt.interact_num.numpy(), np.array([2, 1]))
+        pt = coness.intersect(pt)
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[-0.1, 1., 0.1], [0.2, 0.4, 0.], [-0.1, 1., 0.1]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 0., -1.], [0., 0., 1.]]))
+        pt = coness.intersect(pt)
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[-0.1, 1., 0.1], [0.2, 0.4, 0.], [-0.1, 1., 0.1]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 0., -1.], [0., 0., 1.]]))
+        pt = coness.intersect(pt)
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[-0.1, 1., 0.1], [0.2, 0.4, 0.], [-0.1, 1., 0.1]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[0., 0., 1.], [0., 0., -1.], [0., 0., 1.]]))
+
+        npt.assert_array_almost_equal(pt.interact_num.numpy(), np.array([2, 1, 2]))
 
 
 if __name__ == '__main__':

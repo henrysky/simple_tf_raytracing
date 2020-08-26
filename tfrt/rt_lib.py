@@ -31,10 +31,10 @@ def mag(tensor):
     Calculate magnitude of the vector, return scalar tensor
     """
     if tf.equal(tensor.get_shape().rank, 1):
-        mag = tf.sqrt(tf.tensordot(tensor, tensor, 1))
+        _mag = tf.sqrt(tf.tensordot(tensor, tensor, 1))
     else:
-        mag = tf.sqrt(tf.reduce_sum(tensor*tensor, 1))
-    return mag
+        _mag = tf.sqrt(tf.reduce_sum(tensor*tensor, 1))
+    return _mag
 
 
 def ray_reflection(rays, normal):
@@ -332,7 +332,7 @@ class Pyramid:
         self.tris = [self.tri_1, self.tri_2, self.tri_3, self.tri_4]
         
     def intersect(self, rays):
-        _pt = deepcopy(rays)  # by default assume not intersecting with pyramid
+        _pt = rays.copy()  # by default assume not intersecting with pyramid
         distance = tf.ones(rays.size(), dtype=precision) * faraway
         
         for tri in self.tris:
@@ -400,6 +400,10 @@ class Cone(Surface):
         t1 = (-b - det) / (2. * a)
         t2 = (-b + det) / (2. * a)
 
+        # close enough to 0 then assume 0
+        t1 = tf.where(tf.greater(tf.abs(t1), epsilon), t1, tf.zeros_like(t1))
+        t2 = tf.where(tf.greater(tf.abs(t2), epsilon), t2, tf.zeros_like(t2))
+
         good_t_idx = tf.logical_or(tf.less(t1, 0.), tf.logical_and(tf.greater(t2, 0.), tf.less(t2, t1)))
         t = tf.where(good_t_idx, t2, t1)
         bad_t = tf.where(good_t_idx, t1, t2)
@@ -415,7 +419,6 @@ class Cone(Surface):
 
         t_disagree_idx = tf.not_equal(cond_3, bad_cond_3)
         t = tf.where(tf.logical_and(t_disagree_idx, tf.logical_not(bad_cond_3)), bad_t, t)
-
         p_intersect = rays.p0 + tf.multiply(rays.p1, tf.expand_dims(t, 1))
         cp = p_intersect - tiled_c
         h = tf.reduce_sum(cp * tiled_v, 1)
@@ -427,7 +430,7 @@ class Cone(Surface):
         ray_direction = ray_reflection(rays, normal)
 
         cond_1 = tf.less(det, 0.)
-        cond_2 = tf.less(t, 0.)
+        cond_2 = tf.less_equal(t, 0.)
 
         no_interaction_idx = tf.logical_or(tf.logical_or(cond_1, cond_2), cond_3)
         no_interaction_idx_3 = tf.concat([tf.expand_dims(no_interaction_idx, 1), tf.expand_dims(no_interaction_idx, 1),
@@ -503,7 +506,7 @@ class PyramidArray:
         return Pyramid(self.center + tf.concat([self.x[i], self.y[i], 0.], 0), self.width, self.height, reflectivity=self.reflectivity)
     
     def intersect(self, rays):
-        _pt = deepcopy(rays)  # by default assume not intersecting with pyramid
+        _pt = rays.copy()  # by default assume not intersecting with pyramid
         distance = tf.ones(rays.size(), dtype=precision) * faraway
         
         for i in range(self.num_pixel):
@@ -593,7 +596,7 @@ class ConeArray:
                     reflectivity=self.reflectivity)
 
     def intersect(self, rays):
-        _pt = deepcopy(rays)  # by default assume not intersecting with pyramid
+        _pt = rays.copy()  # by default assume not intersecting with pyramid
         distance = tf.ones(rays.size(), dtype=precision) * faraway
 
         for i in range(self.num_pixel):
