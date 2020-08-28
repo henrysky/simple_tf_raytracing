@@ -181,7 +181,8 @@ class Triangle(Surface):
         cond_0 = tf.logical_and(cond_0_1, cond_0_2)
 
         rI = tf.expand_dims(tf.where(tf.logical_or(cond_0, tf.less(a/b, 0.)), a/b, tf.zeros_like(a)), -1)
-        
+        rI = tf.where(tf.greater(tf.abs(rI), epsilon), rI, tf.zeros_like(rI))
+
         p_intersect = rays.p0 + rays.p1 * rI
 
         w = p_intersect - self.v0  # p0 + rI * p1 - v0
@@ -199,7 +200,7 @@ class Triangle(Surface):
         
         ray_direction = ray_reflection(rays, tiled_normal)
         
-        cond_1 = tf.less(tf.squeeze(rI), epsilon)
+        cond_1 = tf.less_equal(tf.squeeze(rI), 0.)
         cond_2 = tf.less(si, 0.)
         cond_3 = tf.greater(si, 1.)
         cond_4 = tf.less(ti, 0.)
