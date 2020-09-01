@@ -7,8 +7,11 @@ import tensorflow as tf
 # source: http://geomalgorithms.com/a06-_intersect-2.html
 # source: https://www.erikrotteveel.com/python/three-dimensional-ray-tracing-in-python/
 gpu_phy_devices = tf.config.list_physical_devices('GPU')
-for gpu in gpu_phy_devices:
-    tf.config.experimental.set_memory_growth(gpu, True)
+try:
+    for gpu in gpu_phy_devices:
+        tf.config.experimental.set_memory_growth(gpu, True)
+except RuntimeError:
+    pass
 
 faraway = 99999  # faraway distance
 precision = tf.float64  # default precision
@@ -532,7 +535,7 @@ class PyramidArray:
 class ConeArray:
     def __init__(self, center, radius, height, resolution, spacing=0., reflectivity=0.1):
         """
-        An array of  pyramid
+        An array of  cones
 
         :param center: 3D vectors for the center of the base
         :type center: tf.Tensor
@@ -548,8 +551,8 @@ class ConeArray:
         :type reflectivity: float
         """
         self.center = tf.cast(center, precision)  # detector center
-        self.radius = tf.cast(radius, precision)  # pixel radius
-        self.height = tf.cast(height, precision)  # pixel width
+        self.radius = tf.cast(radius, precision)  # cone base radius
+        self.height = tf.cast(height, precision)  # cone height
         self.resolution = resolution  # resolution (W x H)
         self.spacing = spacing  # spacing between pyramids
         self.reflectivity = reflectivity
@@ -557,16 +560,20 @@ class ConeArray:
         self.num_pixel = tf.reduce_prod(self.resolution)
         self.x_append = (self.resolution[0] - 1) * self.spacing  # total extra space from spacing
         self.y_append = (self.resolution[1] - 1) * self.spacing  # total extra space from spacing
-        self.x, self.y = self.pixels_locations()  # center of each pyramid
+        self.x, self.y = self.pixels_locations()  # center of each cone
 
-        self.top_left = self.center + tf.stack([-1. * self.radius * self.resolution[0] / 2. - self.x_append / 2,
-                                                self.radius * self.resolution[1] / 2. + self.y_append / 2, 0.])
-        self.top_right = self.center + tf.stack([self.radius * self.resolution[0] / 2. + self.x_append / 2,
-                                                 self.radius * self.resolution[1] / 2. + self.x_append / 2, 0.])
-        self.bottom_left = self.center + tf.stack([-1. * self.radius * self.resolution[0] / 2. - self.x_append / 2,
-                                                   -1. * self.radius * self.resolution[1] / 2. - self.x_append / 2, 0.])
-        self.bottom_right = self.center + tf.stack([self.radius * self.resolution[0] / 2. + self.x_append / 2,
-                                                    -1. * self.radius * self.resolution[1] / 2. - self.y_append / 2, 0.])
+        self.top_left = self.center + tf.stack([-2. * self.radius * self.resolution[0] / 2. - self.x_append / 2,
+                                                2. * self.radius * self.resolution[1] / 2. + self.y_append / 2,
+                                                0.])
+        self.top_right = self.center + tf.stack([2. * self.radius * self.resolution[0] / 2. + self.x_append / 2,
+                                                 2. * self.radius * self.resolution[1] / 2. + self.x_append / 2,
+                                                 0.])
+        self.bottom_left = self.center + tf.stack([-2. * self.radius * self.resolution[0] / 2. - self.x_append / 2,
+                                                   -2. * self.radius * self.resolution[1] / 2. - self.x_append / 2,
+                                                   0.])
+        self.bottom_right = self.center + tf.stack([2. * self.radius * self.resolution[0] / 2. + self.x_append / 2,
+                                                    -2. * self.radius * self.resolution[1] / 2. - self.y_append / 2,
+                                                    0.])
 
         self.pyramid_list = [self.get_pyramid_from_array(i) for i in range(self.num_pixel)]
 
@@ -619,9 +626,111 @@ class ConeArray:
         return _pt
 
 
+class ConeDenseArray:
+    def __init__(self, center, radius, coneheight, width, height, reflectivity=0.1):
+        """
+        An array of dense cones (fit as many cone as possible automatically)
+        See https://www.engineeringtoolbox.com/circles-within-rectangle-d_1905.html
+
+        :param center: 3D vectors for the center of the base
+        :type center: tf.Tensor
+        :param radius: radius of the base
+        :type radius: float
+        :param coneheight: height of the base
+        :type coneheight: float
+        :param width: width of the box to be filled with cones
+        :type width: float
+        :param height: height of the base
+        :type height: float
+        :param reflectivity: Reflectivity of the surface
+        :type reflectivity: float
+        """
+        self.center = tf.cast(center, precision)  # detector center
+        self.radius = tf.cast(radius, precision)  # cone base radius
+        self.coneheight = tf.cast(coneheight, precision)  # cone height
+        self.height = tf.cast(height, precision)  # backplane height
+        self.width = tf.cast(width, precision)  # backplane width
+        self.reflectivity = reflectivity
+
+        self.x, self.y = self.pixels_locations()  # center of each cone
+        self.num_pixel = tf.reduce_prod(tf.shape(self.x))
+
+        self.top_left = self.center + tf.stack([-1. * self.width / 2., self.height / 2., 0.])
+        self.top_right = self.center + tf.stack([self.width / 2., self.height / 2., 0.])
+        self.bottom_left = self.center + tf.stack([-1. * self.width / 2., -1. * self.height / 2., 0.])
+        self.bottom_right = self.center + tf.stack([self.width / 2., -1. * self.height / 2., 0.])
+
+        self.pyramid_list = [self.get_cones_from_array(i) for i in range(self.num_pixel)]
+
+        self.backplane = Plane(self.top_left, self.top_right, self.bottom_right, self.bottom_left)
+
+    def pixels_locations(self):
+        rw, rh = self.width, self.height
+        cd, cs = self.radius * 2, 0.
+        assert rw > 0.
+
+        triangle = 0
+        
+        x_loc = np.zeros(99999)
+        y_loc = np.zeros(99999)
+
+        posX = cd / 2 + cs
+        posY = cd / 2 + cs
+
+        counter = 0
+        
+        while posY+cd / 2 <= rh:
+            while (posX + cd /2 + cs <= rw):
+                x_loc[counter] = posX
+                y_loc[counter] = posY
+                counter = counter + 1
+                posX = posX + (cd + cs)
+            if triangle == 0:
+                posX = (cd + 1.5*cs)
+                triangle = 1
+            else:
+                posX = cd / 2 + cs
+                triangle = 0
+            posY = posY + np.power(np.power((cd + cs), 2) * 0.75, 0.5)
+
+        # origin was assumed as bottom left corner, need to shift origin to the center of the backplane
+        x_loc -= self.width/2
+        y_loc -= self.height/2
+
+        # multiple y by -1 to flip the array top-down
+        return x_loc[:counter], y_loc[:counter] * -1.
+
+    def get_cones_from_array(self, i):
+        assert i < self.num_pixel
+        return Cone(self.center + tf.concat([self.x[i], self.y[i], 0.], 0), self.radius, self.coneheight,
+                    reflectivity=self.reflectivity)
+
+    def intersect(self, rays):
+        _pt = rays.copy()  # by default assume not intersecting with pyramid
+        distance = tf.ones(rays.size(), dtype=precision) * faraway
+
+        for i in range(self.num_pixel):
+            pt = self.pyramid_list[i].intersect(rays)
+            interacted_idx = tf.greater(pt.interact_num, rays.interact_num)
+            dist = mag(rays.p0 - pt.p0)  # get the distance
+            interacted_w_shortest_idx = tf.logical_and(interacted_idx, tf.less(dist, distance))
+            if tf.math.count_nonzero(interacted_w_shortest_idx) == 0:
+                continue
+            else:
+                distance = tf.where(interacted_w_shortest_idx, dist, distance)
+                # its fine, weird indexing
+                _pt[interacted_w_shortest_idx] = pt
+        __pt = self.backplane.intersect(rays)
+        interacted_idx = tf.greater(__pt.interact_num, rays.interact_num)
+        dist = mag(rays.p0 - __pt.p0)  # get the distance
+        interacted_w_shortest_idx = tf.logical_and(interacted_idx, tf.less(dist, distance))
+        _pt[interacted_w_shortest_idx] = __pt
+        return _pt
+
+
 class Detector:
     """
-    A detector lying on xy plane
+    A detector lying on a horizontal plane
     """
     def __init__(self, center, resolution, pixel_width, reflectivity=0.):
         """
@@ -676,8 +785,8 @@ class Detector:
         i = np.unravel_index(i, self.resolution)
         xi = tf.random.uniform([num, 1], self.x[i]-self.pixel_width/2, self.x[i]+self.pixel_width/2, precision)
         yi = tf.random.uniform([num, 1], self.y[i]-self.pixel_width/2, self.y[i]+self.pixel_width/2, precision)
-        xdirecti = tf.random.uniform([num, 1], -2., 2., precision)
-        ydirecti = tf.random.uniform([num, 1], -2., 2., precision)
+        xdirecti = tf.random.uniform([num, 1], -10., 10., precision)
+        ydirecti = tf.random.uniform([num, 1], -10., 10., precision)
         # hard code x-y direction minium to not waste ray??        
         return Ray(self.center + tf.concat([xi, yi, tf.zeros((num, 1), dtype=precision)], 1), 
                    tf.concat([xdirecti, ydirecti, tf.ones((num, 1), dtype=precision)*-1.], 1), 

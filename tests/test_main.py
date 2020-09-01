@@ -119,6 +119,25 @@ class MyTestCase(unittest.TestCase):
 
         npt.assert_array_almost_equal(pt.interact_num.numpy(), np.array([2, 1, 2]))
 
+    def test_conesdensearray(self):
+        coness = ConeDenseArray(center=tf.constant([0., 0., 0.]),
+                                radius=1.,
+                                coneheight=1.,
+                                width=4,
+                                height=4,
+                                reflectivity=0.1)
+
+        rays = Ray(p0=tf.constant([[0.1, 1., 2.], [0.2, 0.4, -2.], [0.1, 1., .2]], dtype=precision),
+                   p1=tf.constant([[0., 0., -1.], [0., 0., 1.], [0., 0., -1.]], dtype=precision),
+                   intensity=tf.ones(3),
+                   interact_num=tf.zeros(3, dtype=tf.int32))
+
+        print(coness.x, coness.y, coness.top_left, coness.top_right, coness.bottom_left, coness.bottom_right)
+
+        pt = coness.intersect(rays)
+        npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0.1, 1., 0.1], [0.2, 0.4, 0.], [0.1, 1., 0.1]]))
+        npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[-1., 0., 0.], [0., 0., -1.], [-1., 0., 0.]]))
+
 
 if __name__ == '__main__':
     unittest.main()
