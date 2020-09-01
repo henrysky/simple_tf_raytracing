@@ -132,8 +132,6 @@ class MyTestCase(unittest.TestCase):
                    intensity=tf.ones(3),
                    interact_num=tf.zeros(3, dtype=tf.int32))
 
-        print(coness.x, coness.y, coness.top_left, coness.top_right, coness.bottom_left, coness.bottom_right)
-
         pt = coness.intersect(rays)
         npt.assert_array_almost_equal(pt.p0.numpy(), np.array([[0.1, 1., 0.1], [0.2, 0.4, 0.], [0.1, 1., 0.1]]))
         npt.assert_array_almost_equal(pt.p1.numpy(), np.array([[-1., 0., 0.], [0., 0., -1.], [-1., 0., 0.]]))
